@@ -5,7 +5,7 @@ import asyncio
 import random
 import os
 from config import DISCORD_TOKEN, LOG_CHANNEL_ID
-from predictor import predictor
+from predictor import predictor, BloxflipAuth
 
 intents = discord.Intents.default()
 intents.message_content = True
@@ -65,15 +65,40 @@ async def on_interaction(interaction: discord.Interaction):
 
 @bot.event
 async def on_modal_submit(interaction: discord.Interaction):
+    # --- Roblox login ---
     if interaction.data.get("title") == "Login with Roblox":
         cookie = interaction.data["components"][0]["components"][0]["value"]
-        predictor.set_user_session(interaction.user.id, {"type": "roblox", "cookie": cookie})
-        await interaction.response.send_message("✅ Successfully connected with Roblox!", ephemeral=True)
+        try:
+            # Test the cookie by creating a temporary auth
+            test_auth = BloxflipAuth(roblox_cookie=cookie)
+            test_session = test_auth.get_session()
+            resp = test_session.get("https://bloxflip.com/api/user/profile", timeout=10)
+            if resp.status_code != 200:
+                await interaction.response.send_message("❌ Invalid Roblox cookie – could not fetch profile. Check your cookie.", ephemeral=True)
+                return
+            # Store the session
+            predictor.set_user_session(interaction.user.id, {"type": "roblox", "cookie": cookie})
+            await interaction.response.send_message("✅ Successfully connected with Roblox!", ephemeral=True)
+        except Exception as e:
+            await interaction.response.send_message(f"❌ Authentication failed: {str(e)}", ephemeral=True)
+
+    # --- Tokens login ---
     elif interaction.data.get("title") == "Paste Tokens":
         app_rt = interaction.data["components"][0]["components"][0]["value"]
         app_at = interaction.data["components"][1]["components"][0]["value"]
-        predictor.set_user_session(interaction.user.id, {"type": "tokens", "app_rt": app_rt, "app_at": app_at})
-        await interaction.response.send_message("✅ Successfully connected with tokens!", ephemeral=True)
+        try:
+            # Test the tokens by creating a temporary auth
+            test_auth = BloxflipAuth(app_rt=app_rt, app_at=app_at)
+            test_session = test_auth.get_session()
+            resp = test_session.get("https://bloxflip.com/api/user/profile", timeout=10)
+            if resp.status_code != 200:
+                await interaction.response.send_message("❌ Invalid tokens – could not fetch profile. Check your app.rt and app.at values.", ephemeral=True)
+                return
+            # Store the session
+            predictor.set_user_session(interaction.user.id, {"type": "tokens", "app_rt": app_rt, "app_at": app_at})
+            await interaction.response.send_message("✅ Successfully connected with tokens!", ephemeral=True)
+        except Exception as e:
+            await interaction.response.send_message(f"❌ Authentication failed: {str(e)}", ephemeral=True)
 
 # ---------- Slash Commands ----------
 @bot.tree.command(name="mines_predict", description="Predict safe tiles in Mines")
