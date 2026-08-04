@@ -241,7 +241,7 @@ async def win_detector():
         await asyncio.sleep(8)
 
 if __name__ == "__main__":
-    bot.run(DISCORD_TOKEN)import discord
+    bot.run(DISCORD_TOKEN)
 from discord import app_commands
 from discord.ext import commands
 import asyncio
