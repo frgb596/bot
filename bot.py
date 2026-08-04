@@ -1,4 +1,59 @@
-import discord
+import logging
+import sys
+import os
+
+# Configure professional logging FIRST
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s | %(levelname)-8s | %(name)s | %(message)s',
+    handlers=[
+        logging.StreamHandler(sys.stdout),
+        logging.FileHandler('bot.log')
+    ]
+)
+logger = logging.getLogger(__name__)
+
+def main():
+    try:
+        # ✅ FIXED IMPORT - No more NameError
+        from predictor import predictor, BloxflipAuth
+        
+        logger.info("=" * 50)
+        logger.info("  BLOXFLIP BOT v2.0 - Professional Edition")
+        logger.info("  Custom Statistical Algorithm Loaded")
+        logger.info("=" * 50)
+        
+        # Validate auth
+        token = os.getenv("BLOXFLIP_TOKEN", "")
+        auth = BloxflipAuth(token)
+        
+        if not auth.is_valid():
+            logger.error("❌ No valid BLOXFLIP_TOKEN found in environment!")
+            logger.info("Set it with: export BLOXFLIP_TOKEN='your_token_here'")
+            sys.exit(1)
+            
+        predictor.auth_token = token
+        logger.info("✅ Authentication configured")
+        logger.info("✅ Predictor ready. Use predictor.analyze_history(games) to scan.")
+        
+        # === YOUR MAIN BOT LOOP GOES HERE ===
+        # Example usage:
+        # analysis = predictor.analyze_history(recent_games)
+        # if analysis['action'] == 'PLAY':
+        #     place_bet(analysis['bet_size'])
+        
+        logger.info("Bot initialized successfully. Waiting for commands...")
+        
+    except ImportError as e:
+        logger.critical(f"❌ Import failed: {e}")
+        logger.critical("Ensure predictor.py exists and BloxflipPredictor class is defined.")
+        sys.exit(1)
+    except Exception as e:
+        logger.exception(f"❌ Fatal error during startup: {e}")
+        sys.exit(1)
+
+if __name__ == "__main__":
+    main()import discord
 from discord import app_commands
 from discord.ext import commands
 import asyncio
