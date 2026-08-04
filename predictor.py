@@ -1,4 +1,4 @@
-import httpx
+predictor = BloxflipPredictor()
 import asyncio
 import os
 from config import APP_RT, APP_AT, ROBLOX_COOKIE, BLOXFLIP_AUTH, MINES_MODEL_PATH, TOWERS_MODEL_PATH
