@@ -5,22 +5,15 @@ import os
 from tensorflow.keras.models import Sequential, load_model
 from tensorflow.keras.layers import Conv2D, MaxPooling2D, Flatten, Dense, Dropout, LSTM
 from sklearn.model_selection import train_test_split
-from config import APP_RT, APP_AT, BLOXFLIP_AUTH, MINES_MODEL_PATH, SLIDE_MODEL_PATH
+from config import MINES_MODEL_PATH, SLIDE_MODEL_PATH
+from predictor import BloxflipAuth  # 复用 predictor 中的认证类
 
 CSV_FILE = "games.csv"
 
 def get_session():
-    s = requests.Session()
-    s.cookies.set('app.rt', APP_RT, domain='.bloxflip.com', path='/')
-    s.cookies.set('app.at', APP_AT, domain='.bloxflip.com', path='/')
-    s.headers.update({
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Accept': 'application/json, text/plain, */*',
-        'Referer': 'https://bloxflip.com/',
-    })
-    if BLOXFLIP_AUTH:
-        s.headers.update({'Authorization': BLOXFLIP_AUTH})
-    return s
+    # 使用与 predictor 相同的认证方式
+    auth = BloxflipAuth()
+    return auth.get_session()
 
 # ---------- Save game to CSV ----------
 def save_game_to_csv(tx):
@@ -111,20 +104,4 @@ def train_all():
     return f"{result_mines}\n{result_slide}"
 
 if __name__ == "__main__":
-    print(train_all())from config import APP_RT, APP_AT, BLOXFLIP_AUTH
-import requests
-
-def get_session():
-    s = requests.Session()
-    s.cookies.set('app.rt', APP_RT, domain='.bloxflip.com')
-    s.cookies.set('app.at', APP_AT, domain='.bloxflip.com')
-    if BLOXFLIP_AUTH:
-        s.headers.update({'Authorization': BLOXFLIP_AUTH})
-    s.headers.update({'User-Agent': 'Mozilla/5.0'})
-    return s
-
-def fetch_mines_history(limit=500):
-    session = get_session()
-    url = f"https://bloxflip.com/api/games/mines/history?size={limit}&page=0"
-    resp = session.get(url)
-    return resp.json() if resp.status_code == 200 else []
+    print(train_all())
