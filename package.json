@@ -9,9 +9,11 @@
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.45.0",
+    "@tensorflow/tfjs-node": "^4.20.0",
+    "@types/ws": "^8.18.1",
     "discord.js": "^14.15.3",
     "dotenv": "^16.4.5",
-    "@tensorflow/tfjs-node": "^4.20.0"
+    "ws": "^8.21.2"
   },
   "devDependencies": {
     "@types/node": "^20.14.10",
