@@ -260,7 +260,7 @@ async def win_detector():
         await asyncio.sleep(8)
 
 # ===== THIS IS THE ONLY LINE AT THE BOTTOM =====
-bot.run(DISCORD_TOKEN)import discord
+bot.run(DISCORD_TOKEN)
 from discord import app_commands
 from discord.ext import commands
 import asyncio
