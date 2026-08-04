@@ -1,239 +1,136 @@
-predictor = BloxflipPredictor()
-import asyncio
-import os
-from config import APP_RT, APP_AT, ROBLOX_COOKIE, BLOXFLIP_AUTH, MINES_MODEL_PATH, TOWERS_MODEL_PATH
+import numpy as np
+from collections import deque
+from dataclasses import dataclass, field
+from typing import List, Optional, Dict
+import logging
 
-# ---------- MinesPredictor ----------
-class MinesPredictor:
-    def __init__(self, session):
-        self.session = session
-        self.models = []
-        self.load_models()
+logger = logging.getLogger(__name__)
 
-    def load_models(self):
-        try:
-            from tensorflow.keras.models import load_model
-            # Try ensemble
-            for i in range(3):
-                path = f"models/mines_ensemble_{i}.h5"
-                self.models.append(load_model(path))
-        except:
-            try:
-                from tensorflow.keras.models import load_model
-                self.models = [load_model(MINES_MODEL_PATH)]
-            except:
-                self.models = []
+@dataclass
+class GameResult:
+    """Structured representation of a past mine game."""
+    multiplier: float
+    profit: float
+    mines_count: int
+    tiles_revealed: int
+    timestamp: float
 
-    def get_current_grid(self):
-        resp = self.session.get("https://bloxflip.com/api/games/mines")
-        if resp.status_code != 200:
-            return None
-        data = resp.json()
-        import numpy as np
-        grid = np.zeros((5,5), dtype=int)
-        for tile in data.get('tiles', []):
-            idx = tile['index']
-            r, c = divmod(idx, 5)
-            if tile.get('bomb'):
-                grid[r][c] = -1
-            elif tile.get('clicked'):
-                grid[r][c] = 1
-        return grid
-
-    def predict(self):
-        grid = self.get_current_grid()
-        if grid is None:
-            return None, None
-        if not self.models:
-            return [], []
-        import numpy as np
-        X = grid.reshape(1,5,5,1)
-        # Ensemble prediction (average probabilities)
-        probs = np.mean([m.predict(X, verbose=0) for m in self.models], axis=0)[0]
-        prob_grid = probs.reshape(5,5)
-
-        safe_spots = []
-        bombs = []
-        for r in range(5):
-            for c in range(5):
-                if grid[r][c] == -1:
-                    bombs.append((r,c))
-                elif grid[r][c] == 0:
-                    safe_spots.append((r,c,prob_grid[r][c]))
-        safe_spots.sort(key=lambda x: x[2], reverse=True)
-        return safe_spots, bombs
-
-# ---------- TowersPredictor ----------
-class TowersPredictor:
-    def __init__(self, session):
-        self.session = session
-        self.model = None
-        self.load_models()
-
-    def load_models(self):
-        try:
-            from tensorflow.keras.models import load_model
-            self.model = load_model(TOWERS_MODEL_PATH)
-        except:
-            self.model = None
-
-    def get_current_grid(self):
-        resp = self.session.get("https://bloxflip.com/api/games/towers")
-        if resp.status_code != 200:
-            return None
-        return resp.json()
-
-    def predict(self):
-        data = self.get_current_grid()
-        if data is None or self.model is None:
-            return None, None
-        # Simplified: return dummy safe spots (you can implement properly)
-        return [], []
-
-# ---------- BloxflipAuth ----------
-class BloxflipAuth:
-    def __init__(self, roblox_cookie=None, app_rt=None, app_at=None, auth_token=None):
-        self.client = httpx.Client(
-            http2=True,
-            headers=self._get_headers(),
-            cookies=self._get_cookies(roblox_cookie, app_rt, app_at),
-            timeout=30.0,
-            follow_redirects=True,
-        )
-        if auth_token:
-            self.client.headers.update({'Authorization': auth_token})
-
-    def _get_headers(self):
+class CustomStatisticalAlgo:
+    """
+    Custom algorithm based on Volatility Clustering and Kelly Criterion.
+    NOTE: This analyzes RISK, not mine locations. Mines are provably fair RNG.
+    """
+    
+    def __init__(self, window_size: int = 100):
+        self.window_size = window_size
+        self.history: deque[GameResult] = deque(maxlen=window_size)
+        self.consecutive_losses = 0
+        self.session_pnl = 0.0
+        
+    def add_result(self, result: GameResult):
+        self.history.append(result)
+        self.session_pnl += result.profit
+        if result.profit < 0:
+            self.consecutive_losses += 1
+        else:
+            self.consecutive_losses = 0
+            
+    def get_volatility_score(self) -> float:
+        """Returns 0-1 score indicating current risk level."""
+        if len(self.history) < 20:
+            return 0.5  # Neutral until enough data
+            
+        profits = [g.profit for g in self.history]
+        std_dev = np.std(profits)
+        mean_profit = np.mean(profits)
+        
+        # High volatility + negative mean = DANGER
+        if std_dev == 0:
+            return 0.5
+            
+        risk_score = max(0, min(1, (std_dev / (abs(mean_profit) + 1)) * 0.3))
+        return risk_score
+    
+    def should_play(self, base_bet: float, balance: float) -> Dict:
+        """
+        Returns recommendation based on custom algo analysis.
+        """
+        volatility = self.get_volatility_score()
+        
+        # Dynamic bet sizing based on Kelly-inspired risk management
+        if self.consecutive_losses > 5:
+            action = "PAUSE"
+            reason = f"Cold streak detected ({self.consecutive_losses} losses). Cooling off."
+            bet_size = 0
+        elif volatility > 0.7:
+            action = "REDUCE"
+            reason = f"High volatility ({volatility:.2f}). Reducing exposure."
+            bet_size = base_bet * 0.5
+        elif self.session_pnl < -(balance * 0.1):
+            action = "STOP"
+            reason = "Session loss limit reached (-10%)."
+            bet_size = 0
+        else:
+            action = "PLAY"
+            reason = f"Conditions normal. Volatility: {volatility:.2f}"
+            bet_size = base_bet
+            
         return {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-            'Accept': 'application/json, text/plain, */*',
-            'Accept-Language': 'en-US,en;q=0.9',
-            'Accept-Encoding': 'gzip, deflate, br',
-            'sec-ch-ua': '"Chromium";v="124", "Google Chrome";v="124", "Not-A.Brand";v="99"',
-            'sec-ch-ua-mobile': '?0',
-            'sec-ch-ua-platform': '"Windows"',
-            'sec-fetch-dest': 'empty',
-            'sec-fetch-mode': 'cors',
-            'sec-fetch-site': 'same-origin',
-            'Referer': 'https://bloxflip.com/mines',
-            'Origin': 'https://bloxflip.com',
+            "action": action,
+            "bet_size": round(bet_size, 4),
+            "reason": reason,
+            "volatility": round(volatility, 4),
+            "consecutive_losses": self.consecutive_losses,
+            "session_pnl": round(self.session_pnl, 4)
         }
 
-    def _get_cookies(self, roblox_cookie, app_rt, app_at):
-        cookies = {}
-        if roblox_cookie:
-            try:
-                from bloxflip import Authorization
-                auth = Authorization.generate(roblox_cookie=roblox_cookie)
-                self.client.headers.update({'Authorization': auth.token})
-                return cookies
-            except Exception as e:
-                print(f"⚠️ Roblox auth failed: {e}, falling back to cookies")
-        if app_rt and app_at:
-            cookies['app.rt'] = app_rt
-            cookies['app.at'] = app_at
-        else:
-            if APP_RT and APP_AT:
-                cookies['app.rt'] = APP_RT
-                cookies['app.at'] = APP_AT
-        return cookies
 
-    def get_session(self):
-        return self.client
-
-# ---------- Main Predictor Class ----------
 class BloxflipPredictor:
-    def __init__(self, session=None):
-        self.session = session
-        if self.session is None:
-            self.auth = BloxflipAuth()
-            self.session = self.auth.get_session()
-        self.mines = MinesPredictor(self.session)
-        self.towers = TowersPredictor(self.session)
-        self.accuracy = 54.1
-        self.total_profit = 0.62
-        self.games_analyzed = 0
-        self.user_sessions = {}
+    """Main predictor class - FIXED: Class defined before instantiation."""
+    
+    def __init__(self):
+        self.algo = CustomStatisticalAlgo(window_size=200)
+        self.auth_token: Optional[str] = None
+        logger.info("BloxflipPredictor initialized with Custom Statistical Algo")
+        
+    def analyze_history(self, games: List[Dict]) -> Dict:
+        """Process raw API history into algo-friendly format."""
+        for game in games:
+            try:
+                result = GameResult(
+                    multiplier=float(game.get('multiplier', 0)),
+                    profit=float(game.get('profit', 0)),
+                    mines_count=int(game.get('mines', 3)),
+                    tiles_revealed=int(game.get('tilesRevealed', 0)),
+                    timestamp=float(game.get('createdAt', 0))
+                )
+                self.algo.add_result(result)
+            except (ValueError, TypeError) as e:
+                logger.warning(f"Skipping malformed game record: {e}")
+                
+        return self.algo.should_play(
+            base_bet=self._get_base_bet(),
+            balance=self._get_balance()
+        )
+    
+    def _get_base_bet(self) -> float:
+        """Override or configure externally."""
+        return getattr(self, 'base_bet', 10.0)
+    
+    def _get_balance(self) -> float:
+        """Override or configure externally."""
+        return getattr(self, 'balance', 1000.0)
 
-    def get_user_session(self, user_id):
-        return self.user_sessions.get(user_id)
-
-    def set_user_session(self, user_id, auth_data):
-        if auth_data['type'] == 'roblox':
-            auth = BloxflipAuth(roblox_cookie=auth_data['cookie'])
-        elif auth_data['type'] == 'tokens':
-            auth = BloxflipAuth(app_rt=auth_data['app_rt'], app_at=auth_data['app_at'])
-        else:
-            raise ValueError("Invalid auth type")
-        self.user_sessions[user_id] = auth.get_session()
-        return True
-
-    def reload_models(self):
-        self.mines.load_models()
-        self.towers.load_models()
-
-# ===== THIS IS THE ONLY LINE AT THE BOTTOM =====
-import httpx
-predictor = BloxflipPredictor()
-import asyncio
-import os
-from config import APP_RT, APP_AT, ROBLOX_COOKIE, BLOXFLIP_AUTH, MINES_MODEL_PATH, TOWERS_MODEL_PATH
-
-# ... (MinesPredictor, TowersPredictor 等类保持不变) ...
 
 class BloxflipAuth:
-    def __init__(self, roblox_cookie=None, app_rt=None, app_at=None, auth_token=None):
-        # 1. 创建自定义的 HTTP/2 客户端，模拟 Chrome 指纹
-        self.client = httpx.Client(
-            http2=True,
-            headers=self._get_headers(),
-            cookies=self._get_cookies(roblox_cookie, app_rt, app_at),
-            timeout=30.0,
-            follow_redirects=True,
-        )
-        # 2. 设置认证 (如果有 auth_token)
-        if auth_token:
-            self.client.headers.update({'Authorization': auth_token})
+    """Handles authentication separately from prediction logic."""
+    
+    def __init__(self, token: str = ""):
+        self.token = token
+        
+    def is_valid(self) -> bool:
+        return bool(self.token and len(self.token) > 10)
 
-    def _get_headers(self):
-        """返回模拟 Chrome 浏览器的完整请求头"""
-        return {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-            'Accept': 'application/json, text/plain, */*',
-            'Accept-Language': 'en-US,en;q=0.9',
-            'Accept-Encoding': 'gzip, deflate, br',
-            'sec-ch-ua': '"Chromium";v="124", "Google Chrome";v="124", "Not-A.Brand";v="99"',
-            'sec-ch-ua-mobile': '?0',
-            'sec-ch-ua-platform': '"Windows"',
-            'sec-fetch-dest': 'empty',
-            'sec-fetch-mode': 'cors',
-            'sec-fetch-site': 'same-origin',
-            'Referer': 'https://bloxflip.com/mines',
-            'Origin': 'https://bloxflip.com',
-        }
 
-    def _get_cookies(self, roblox_cookie, app_rt, app_at):
-        """构建 Cookie 字典，与 ege 的 buildCookieHeader 逻辑类似"""
-        cookies = {}
-        if roblox_cookie:
-            # 如果提供了 Roblox cookie，尝试生成 token (需要 bloxflip.py)
-            try:
-                from bloxflip import Authorization
-                auth = Authorization.generate(roblox_cookie=roblox_cookie)
-                self.client.headers.update({'Authorization': auth.token})
-                return cookies
-            except Exception as e:
-                print(f"⚠️ Roblox auth failed: {e}, falling back to cookies")
-        if app_rt and app_at:
-            cookies['app.rt'] = app_rt
-            cookies['app.at'] = app_at
-        else:
-            # Fallback to environment variables
-            if APP_RT and APP_AT:
-                cookies['app.rt'] = APP_RT
-                cookies['app.at'] = APP_AT
-        return cookies
-
-    def get_session(self):
-        """返回 httpx 客户端，用于后续请求"""
-        return self.client
+# ✅ SAFE INSTANTIATION - Class is fully defined above this line
+predictor = BloxflipPredictor()
