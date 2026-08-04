@@ -2,22 +2,21 @@ const BASE_URL = 'https://bloxflip.com/api';
 
 const COMMON_HEADERS = {
   'Accept': 'application/json, text/plain, */*',
-  'Referer': 'https://bloxflip.com/mines',
+  'Accept-Language': 'en-US,en;q=0.9',
+  'Priority': 'u=1, i',
+  'Referer': 'https://bloxflip.com/profile',
+  'Sec-CH-UA': '"Not;A=Brand";v="8", "Chromium";v="150", "Google Chrome";v="150"',
+  'Sec-CH-UA-Mobile': '?0',
+  'Sec-CH-UA-Platform': '"Linux"',
+  'Sec-Fetch-Dest': 'empty',
+  'Sec-Fetch-Mode': 'cors',
+  'Sec-Fetch-Site': 'same-origin',
   'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36',
   'x-currency': 'FLIPCOINS',
 };
 
-export interface BloxflipUser {
-  id: string;
-  username: string;
-}
-
-export interface MinesGame {
-  _id: string;
-  mines: number;
-  gridSize: number;
-  createdAt: string;
-}
+export interface BloxflipUser { id: string; username: string; }
+export interface MinesGame { _id: string; mines: number; gridSize: number; createdAt: string; }
 
 function buildCookieHeader(rt: string, at: string): string {
   return `app.rt=${rt}; app.at=${at}`;
