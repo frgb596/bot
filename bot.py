@@ -1,4 +1,169 @@
 import discord
+from discord import app_commands
+from discord.ext import commands
+import asyncio
+import random
+from config import DISCORD_TOKEN, LOG_CHANNEL_ID
+from predictor import predictor
+
+intents = discord.Intents.default()
+intents.message_content = True
+bot = commands.Bot(command_prefix='/', intents=intents)
+
+@bot.event
+async def on_ready():
+    print(f'✅ >_< Predictor is online as {bot.user}')
+    await bot.tree.sync()
+    bot.loop.create_task(win_detector())
+
+# ---- Win detector (same as before) ----
+async def win_detector():
+    await bot.wait_until_ready()
+    channel = bot.get_channel(LOG_CHANNEL_ID)
+    if not channel:
+        print("Log channel not found!")
+        return
+    last_win_id = None
+    while True:
+        try:
+            resp = predictor.session.get("https://bloxflip.com/api/user/transactions-history?size=1&page=0&view=games")
+            if resp.status_code == 200:
+                data = resp.json()
+                if data and len(data) > 0:
+                    tx = data[0]
+                    tx_id = tx.get('id')
+                    profit = tx.get('profit', 0)
+                    if tx_id != last_win_id and profit != 0:
+                        last_win_id = tx_id
+                        color = 0x00ff00 if profit > 0 else 0xff0000
+                        embed = discord.Embed(title="🏆 Win Detected!" if profit > 0 else "💀 Loss Detected", color=color)
+                        embed.add_field(name="User", value=tx.get('username','Unknown'), inline=True)
+                        embed.add_field(name="Game", value=tx.get('game','Mines').capitalize(), inline=True)
+                        embed.add_field(name="Bet", value=f"{tx.get('bet',0):,.2f} R$", inline=True)
+                        embed.add_field(name="Payout", value=f"{tx.get('payout',0):,.2f} R$", inline=True)
+                        embed.add_field(name="Profit", value=f"{profit:+,.2f} R$", inline=False)
+                        embed.set_footer(text=f">_< Predictor")
+                        await channel.send(embed=embed)
+        except Exception as e:
+            print(f"Win detector error: {e}")
+        await asyncio.sleep(8)
+
+# ---- Slash Commands ----
+@bot.tree.command(name="mines_predict", description="Predict safe tiles in Mines")
+@app_commands.describe()
+async def mines_predict(interaction: discord.Interaction):
+    await interaction.response.defer()
+    try:
+        safe_spots, bombs = predictor.mines.predict()
+        if safe_spots is None:
+            await interaction.followup.send("❌ Could not fetch Mines game. Make sure you have an active game.")
+            return
+        # Build grid
+        grid_emojis = [['' for _ in range(5)] for _ in range(5)]
+        bomb_set = set(bombs)
+        safe_set = set((r,c) for r,c,_ in safe_spots)
+        for r in range(5):
+            for c in range(5):
+                if (r,c) in bomb_set:
+                    grid_emojis[r][c] = "💣"
+                elif (r,c) in safe_set:
+                    grid_emojis[r][c] = "✅"
+                else:
+                    grid_emojis[r][c] = "❓"
+        rows = [" ".join(row) for row in grid_emojis]
+        grid_str = "\n".join(rows)
+
+        embed = discord.Embed(title=">_< Mines Predictor", color=0x9b59b6)
+        embed.add_field(name="🧠 Safe Spots", value=f"```\n{grid_str}\n```", inline=False)
+        embed.add_field(name="📊 Accuracy", value=f"{predictor.accuracy:.1f}%", inline=True)
+        embed.add_field(name="🎯 Predictions", value="Unlimited", inline=True)
+        embed.set_footer(text="✅ safe | 💣 bomb | ❓ unknown")
+        await interaction.followup.send(embed=embed)
+    except Exception as e:
+        await interaction.followup.send(f"❌ Error: {str(e)}")
+
+@bot.tree.command(name="towers_predict", description="Predict safe tiles in Towers")
+async def towers_predict(interaction: discord.Interaction):
+    await interaction.response.defer()
+    try:
+        safe_spots, bombs = predictor.towers.predict()
+        if safe_spots is None:
+            await interaction.followup.send("❌ Could not fetch Towers game. Make sure you have an active game.")
+            return
+        # Build a grid – Towers is triangular, we'll show as a pyramid
+        # (simplified: we'll just list the safe spots)
+        embed = discord.Embed(title=">_< Towers Predictor", color=0xf1c40f)
+        if safe_spots:
+            safe_str = ", ".join([f"{chr(65+r)}{c+1}" for r,c,_ in safe_spots[:5]])
+        else:
+            safe_str = "No predictions"
+        embed.add_field(name="⭐ Best Safe Tiles", value=safe_str, inline=False)
+        embed.add_field(name="📊 Accuracy", value=f"{predictor.accuracy:.1f}%", inline=True)
+        embed.add_field(name="🎯 Predictions", value="Unlimited", inline=True)
+        embed.set_footer(text=">_< Predictor")
+        await interaction.followup.send(embed=embed)
+    except Exception as e:
+        await interaction.followup.send(f"❌ Error: {str(e)}")
+
+@bot.tree.command(name="account", description="Show your Bloxflip account info")
+async def account(interaction: discord.Interaction):
+    await interaction.response.defer()
+    try:
+        resp = predictor.session.get("https://bloxflip.com/api/user/profile")
+        if resp.status_code != 200:
+            await interaction.followup.send("❌ Could not fetch account info. Check your login.")
+            return
+        data = resp.json()
+        embed = discord.Embed(title="👤 Bloxflip Account", color=0x00ff00)
+        embed.add_field(name="Username", value=data.get('username','Unknown'), inline=True)
+        embed.add_field(name="Balance", value=f"{data.get('balance',0):,.2f} R$", inline=True)
+        embed.add_field(name="Wins", value=data.get('wins',0), inline=True)
+        embed.add_field(name="Losses", value=data.get('losses',0), inline=True)
+        embed.add_field(name="Total Profit", value=f"{data.get('total_profit',0):+,.2f} R$", inline=True)
+        embed.set_footer(text=">_< Predictor")
+        await interaction.followup.send(embed=embed)
+    except Exception as e:
+        await interaction.followup.send(f"❌ Error: {str(e)}")
+
+@bot.tree.command(name="stats", description="Show predictor performance")
+async def stats(interaction: discord.Interaction):
+    embed = discord.Embed(title="📊 >_< Predictor Stats", color=0x3498db)
+    embed.add_field(name="🎯 Accuracy", value=f"{predictor.accuracy:.1f}%", inline=True)
+    embed.add_field(name="💰 Profit", value=f"{predictor.total_profit:+,.2f} R$", inline=True)
+    embed.add_field(name="📁 Games Analyzed", value=str(predictor.games_analyzed), inline=True)
+    embed.add_field(name="🧠 Models", value="CNN Ensemble (Mines) + CNN (Towers)", inline=False)
+    embed.set_footer(text=">_< Predictor")
+    await interaction.response.send_message(embed=embed)
+
+@bot.tree.command(name="train", description="Retrain models with latest data")
+async def train(interaction: discord.Interaction):
+    await interaction.response.defer()
+    try:
+        import trainer
+        result = trainer.train_all()
+        predictor.reload_models()
+        embed = discord.Embed(title=">_< Training Complete", color=0x00ff00)
+        embed.add_field(name="Result", value=result, inline=False)
+        embed.set_footer(text=">_< Predictor")
+        await interaction.followup.send(embed=embed)
+    except Exception as e:
+        await interaction.followup.send(f"❌ Training failed: {str(e)}")
+
+@bot.tree.command(name="unrig", description="Reset provably fair seed for Mines")
+async def unrig(interaction: discord.Interaction):
+    await interaction.response.defer()
+    try:
+        resp = predictor.session.post("https://bloxflip.com/api/games/mines/reset-seed", json={})
+        if resp.status_code == 200:
+            embed = discord.Embed(title=">_< Seed Reset", description="✅ Seed reset successfully! Next Mines game will use a new seed.", color=0x00ff00)
+            await interaction.followup.send(embed=embed)
+        else:
+            await interaction.followup.send(f"❌ Failed: {resp.status_code}")
+    except Exception as e:
+        await interaction.followup.send(f"❌ Error: {str(e)}")
+
+if __name__ == "__main__":
+    bot.run(DISCORD_TOKEN)import discord
 from discord.ext import commands
 import requests
 import asyncio
