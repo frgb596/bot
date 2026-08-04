@@ -7,11 +7,7 @@ dotenv.config();
 export const supabase = createClient(
   process.env.SUPABASE_URL!,
   process.env.SUPABASE_KEY!,
-  {
-    realtime: {
-      transport: ws
-    }
-  }
+  { realtime: { transport: ws } }
 );
 
 export async function saveUserCookies(discordId: string, rt: string, at: string) {
