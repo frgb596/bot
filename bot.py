@@ -199,7 +199,7 @@ async def sync_commands(ctx):
         await ctx.send(f"❌ Sync failed: {e}")
 
 if __name__ == "__main__":
-    bot.run(DISCORD_TOKEN)import discord
+    bot.run(DISCORD_TOKEN)
 from discord import app_commands
 from discord.ext import commands
 import asyncio
