@@ -198,7 +198,7 @@ async def commands_cmd(ctx):
     await ctx.send(embed=embed)
 
 if __name__ == "__main__":
-    bot.run(DISCORD_TOKEN)import discord
+    bot.run(DISCORD_TOKEN)
 from discord.ext import commands
 import requests
 import asyncio
