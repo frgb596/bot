@@ -102,7 +102,7 @@ class BloxflipPredictor:
         resp.raise_for_status()
         return resp.json()
 
-predictor = BloxflipPredictor()import requests
+predictor = BloxflipPredictor()
 import numpy as np
 import os
 from tensorflow.keras.models import load_model
