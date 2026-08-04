@@ -5,6 +5,13 @@ pandas==2.2.2
 scikit-learn==1.5.2
 tensorflow==2.18.0
 python-dotenv==1.0.0
+bloxflip.py  # optional – for Roblox cookie authdiscord.py==2.4.0
+requests==2.31.0
+numpy==1.26.4
+pandas==2.2.2
+scikit-learn==1.5.2
+tensorflow==2.18.0
+python-dotenv==1.0.0
 bloxflip.py  # 用于将 Roblox Cookie 转换为 Bloxflip Tokendiscord.py==2.4.0
 requests==2.31.0
 numpy==1.26.4
