@@ -2,6 +2,89 @@ import requests
 import numpy as np
 import pandas as pd
 import os
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import Conv2D, MaxPooling2D, Flatten, Dense, Dropout
+from sklearn.model_selection import train_test_split
+from config import MINES_MODEL_PATH, TOWERS_MODEL_PATH
+from predictor import BloxflipAuth
+
+# ---- shared session ----
+def get_session():
+    auth = BloxflipAuth()
+    return auth.get_session()
+
+# ---- Mines data ----
+def fetch_mines_history(limit=500):
+    s = get_session()
+    resp = s.get(f"https://bloxflip.com/api/games/mines/history?size={limit}&page=0")
+    if resp.status_code == 200:
+        return resp.json()
+    return []
+
+def prepare_mines_data(history):
+    X, y = [], []
+    for game in history:
+        grid = np.zeros((5,5), dtype=int)
+        moves = game.get('moves', [])
+        for i, move in enumerate(moves):
+            idx = move['index']
+            r,c = divmod(idx,5)
+            if move['bomb']:
+                grid[r][c] = -1
+            else:
+                grid[r][c] = 1
+            if i < len(moves)-1:
+                next_move = moves[i+1]
+                if not next_move['bomb']:
+                    X.append(grid.copy())
+                    y.append(next_move['index'])
+    if len(X) == 0:
+        return None, None
+    return np.array(X).reshape(-1,5,5,1), np.array(y)
+
+def build_mines_cnn():
+    model = Sequential([
+        Conv2D(32,(2,2), activation='relu', input_shape=(5,5,1)),
+        MaxPooling2D((2,2)),
+        Conv2D(64,(2,2), activation='relu'),
+        Flatten(),
+        Dense(128, activation='relu'),
+        Dropout(0.3),
+        Dense(25, activation='softmax')
+    ])
+    model.compile(optimizer='adam', loss='sparse_categorical_crossentropy', metrics=['accuracy'])
+    return model
+
+def train_mines_ensemble():
+    data = fetch_mines_history(500)
+    if not data:
+        return "No Mines data"
+    X, y = prepare_mines_data(data)
+    if X is None:
+        return "Insufficient data"
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2)
+    for i in range(3):  # train 3 models with different seeds
+        model = build_mines_cnn()
+        model.fit(X_train, y_train, epochs=30, batch_size=32, validation_data=(X_test, y_test))
+        model.save(f"models/mines_ensemble_{i}.h5")
+    acc = model.evaluate(X_test, y_test, verbose=0)[1]
+    return f"Mines ensemble trained on {len(X)} samples. Accuracy: {acc:.2%}"
+
+# ---- Towers data (placeholder) ----
+def train_towers_model():
+    # Implement similar to Mines but for Towers
+    return "Towers model training not yet implemented."
+
+def train_all():
+    result_mines = train_mines_ensemble()
+    result_towers = train_towers_model()
+    return f"{result_mines}\n{result_towers}"
+
+if __name__ == "__main__":
+    print(train_all())import requests
+import numpy as np
+import pandas as pd
+import os
 from tensorflow.keras.models import Sequential, load_model
 from tensorflow.keras.layers import Conv2D, MaxPooling2D, Flatten, Dense, Dropout, LSTM
 from sklearn.model_selection import train_test_split
