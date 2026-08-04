@@ -163,7 +163,7 @@ async def unrig(interaction: discord.Interaction):
         await interaction.followup.send(f"❌ Error: {str(e)}")
 
 if __name__ == "__main__":
-    bot.run(DISCORD_TOKEN)import discord
+    bot.run(DISCORD_TOKEN)
 from discord.ext import commands
 import requests
 import asyncio
