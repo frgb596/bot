@@ -81,7 +81,7 @@ class BloxflipPredictor:
         resp.raise_for_status()
         return resp.json()
 
-predictor = BloxflipPredictor()import requests
+predictor = BloxflipPredictor()
 import numpy as np
 from tensorflow.keras.models import load_model
 from config import APP_RT, APP_AT, BLOXFLIP_AUTH, ROBLOX_COOKIE, MINES_MODEL_PATH, SLIDE_MODEL_PATH
